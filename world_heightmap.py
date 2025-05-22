@@ -30,10 +30,10 @@ WATER_MASK_PATH = str(ROOT / "data/gshhs_land_water_mask_3km_i.tif")
 
 def clip(west: str, south: str, east: str, north: str):
     src_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False, delete_on_close=False
+        suffix=".tif", delete=False
     )
     water_mask_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False, delete_on_close=False
+        suffix=".tif", delete=False
     )
 
     subprocess.call(
