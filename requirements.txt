@@ -1,0 +1,4 @@
+PyQt6>=6.8.1
+pyproj>=3.7.1
+pillow>=11.2.0
+rasterio>=1.4.3
