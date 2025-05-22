@@ -93,17 +93,17 @@ def transform(
         water_data = water_mask.read(1)
         max_elevation = np.nanmax(data)
 
-        with Image.new("RGB", (src.width, src.height)) as img:
+        with Image.new("RGB", (water_mask.width, water_mask.height)) as img:
             pixels = img.load()
 
-            for y in range(src.height):
-                for x in range(src.width):
-                    lat, lon = xy_to_lat_lon(x, y, src)
-                    row, col = water_mask.index(lon, lat)
-                    elev = max(int(data[y, x]), min_elevation)
+            for y in range(water_mask.height):
+                for x in range(water_mask.width):
+                    lat, lon = xy_to_lat_lon(x, y, water_mask)
+                    row, col = src.index(lon, lat)
+                    elev = max(int(data[row, col]), min_elevation)
 
                     if make_water_elevation_always_zero:
-                        if water_data[row, col] == 0:
+                        if water_data[y, x] == 0:
                             elev = 0
 
                     elev = int(255 * (elev / max_elevation))
