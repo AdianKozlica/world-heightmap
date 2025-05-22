@@ -141,10 +141,13 @@ class MainWidget(QWidget):
 
         file_path, _ = QFileDialog.getSaveFileName(
             None,
-            "Save JPEG File",
+            "Save BMP File",
             "",
-            "JPEG Images (*.jpg *.jpeg)",
+            "BMP Images (*.bmp)",
         )
+
+        if not file_path.endswith('.bmp'):
+            file_path += '.bmp'
 
         if file_path is None:
             return
