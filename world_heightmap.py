@@ -94,6 +94,8 @@ def transform(
         max_elevation = np.nanmax(data)
 
         with Image.new("RGB", (src.width, src.height)) as img:
+            pixels = img.load()
+
             for y in range(src.height):
                 for x in range(src.width):
                     lat, lon = xy_to_lat_lon(x, y, src)
@@ -105,7 +107,7 @@ def transform(
                             elev = 0
 
                     elev = int(255 * (elev / max_elevation))
-                    img.putpixel((x, y), (elev, elev, elev))
+                    pixels[x, y] = (elev, elev, elev)
 
             img.save(out)
 
