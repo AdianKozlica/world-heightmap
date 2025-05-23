@@ -146,11 +146,11 @@ class MainWidget(QWidget):
             "BMP Images (*.bmp)",
         )
 
-        if not file_path.endswith('.bmp'):
-            file_path += '.bmp'
-
         if file_path is None:
             return
+        
+        if not file_path.endswith('.bmp'):
+            file_path += '.bmp'
 
         src, water = clip(west, south, east, north)
         transform(
