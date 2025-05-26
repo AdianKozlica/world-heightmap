@@ -130,14 +130,12 @@ def transform(
                     pixels[x, y] = (elev, elev, elev)
 
             upscaled = upscale_func(img, 2).resize((river_src.width, river_src.height))
-
-            with Image.new('RGB', (river_src.width, river_src.height)) as river_img:
-                upscaled_pixels = upscaled.load()
-                
-                for y in range(river_src.height):
-                    for x in range(river_src.width):
-                        if river_data[y, x] != 0:
-                            upscaled_pixels[x, y] = (0, 0, 0)
+            upscaled_pixels = upscaled.load()
+            
+            for y in range(river_src.height):
+                for x in range(river_src.width):
+                    if river_data[y, x] != 0:
+                        upscaled_pixels[x, y] = (0, 0, 0)
             
             upscaled.save(out)
 
