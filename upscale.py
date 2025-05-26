@@ -2,18 +2,22 @@ from PyQt6.QtWidgets import QApplication, QWidget, QFileDialog, QPushButton, QLi
 from PyQt6.QtGui import QIntValidator
 from PIL import Image, ImageDraw
 
+def upscale_func(orig: Image.Image, times: int):
+    w, h = orig.size
+    pixels = orig.load()
+    new = Image.new(orig.mode, (w * times, h * times))
+    draw = ImageDraw.Draw(new)
+    
+    for y in range(h):
+        for x in range(w):
+            color = pixels[x, y]
+            draw.rectangle((x * times, y * times, x * times + (times - 1), y * times + (times - 1)), fill=color, width=0)
+        
+    return new
+
 def upscale(img_path: str, out_path: str, times: int):
     with Image.open(img_path) as orig:
-        w, h = orig.size
-        pixels = orig.load()
-        with Image.new('RGB', (w * times, h * times)) as new:
-            draw = ImageDraw.Draw(new)
-
-            for y in range(h):
-                for x in range(w):
-                    color = pixels[x, y]
-                    draw.rectangle((x * times, y * times, x * times + (times - 1), y * times + (times - 1)), fill=color, width=0)
-            
+        with upscale_func(orig, times) as new:    
             new.save(out_path)
 
 class MainWidget(QWidget):
