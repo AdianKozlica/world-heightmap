@@ -28,7 +28,7 @@ LEAFLET_HTML_PATH = str(ROOT / "leaflet/leaflet.html")
 ETOPO1_PATH = str(ROOT / "data/etopo1.tif")
 WATER_MASK_PATH = str(ROOT / "data/gshhs_land_water_mask_3km_i.tif")
 RIVERS_PATH = str(ROOT / "data/rivers.tif")
-
+NORMALMAP_STRENGTH = 5
 
 def clip(west: str, south: str, east: str, north: str):
     src_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
@@ -93,6 +93,31 @@ def xy_to_lat_lon(x: int, y: int, src):
 
     return lat, lon
 
+def to_normalmap(img: Image.Image):
+    with img.convert('L') as heightmap:
+        height_array = np.array(heightmap).astype(np.float32) / 255.0
+
+        width, height = heightmap.size
+        normal_array = np.zeros((height, width, 3), dtype=np.float32)
+
+        for y in range(1, height - 1):
+            for x in range(1, width - 1):
+                left = height_array[y, x - 1]
+                right = height_array[y, x + 1]
+                down = height_array[y + 1, x]
+                up = height_array[y - 1, x]
+
+                normal_x = (left - right) * NORMALMAP_STRENGTH
+                normal_y = (down - up) * NORMALMAP_STRENGTH
+
+                normal_z = 1.0
+
+                normal = np.array([normal_x, normal_y, normal_z])
+                normal = normal / np.linalg.norm(normal)  # Normalize
+
+                normal_array[y, x] = (normal * 0.5 + 0.5) * 255
+
+        return Image.fromarray(normal_array.astype(np.uint8))
 
 def transform(
     src_path: str,
@@ -101,6 +126,7 @@ def transform(
     out: str,
     make_water_elevation_always_zero=False,
     include_rivers=False,
+    is_normalmap=False,
     min_elevation=float("-inf"),
 ):
     with (
@@ -129,6 +155,8 @@ def transform(
                     elev = int(255 * (elev / max_elevation))
                     pixels[x, y] = (elev, elev, elev)
 
+            out_img = img
+            
             if make_water_elevation_always_zero and include_rivers:
                 upscaled = upscale_func(img, 2).resize((river_src.width, river_src.height))
                 upscaled_pixels = upscaled.load()
@@ -138,9 +166,12 @@ def transform(
                         if river_data[y, x] != 0:
                             upscaled_pixels[x, y] = (0, 0, 0)
 
-                upscaled.save(out)
-            else:
-                img.save(out)
+                out_img = upscaled
+
+            if is_normalmap:
+                out_img = to_normalmap(out_img)
+            
+            out_img.save(out)
 
     os.remove(src_path)
     os.remove(water_path)
@@ -188,6 +219,7 @@ class HeightmapDialog(QDialog):
             file_path,
             self.__make_water_elevation_always_zero.isChecked(),
             self.__include_rivers.isChecked(),
+            self.__is_normalmap.isChecked(),
             min_elevation,
         )
 
@@ -217,6 +249,7 @@ class HeightmapDialog(QDialog):
         )
 
         self.__include_rivers = QCheckBox("Include rivers")
+        self.__is_normalmap = QCheckBox("Is normal mapped")
 
         generate_btn = QPushButton("Generate")
         generate_btn.clicked.connect(self.__generate_heightmap)
@@ -228,6 +261,7 @@ class HeightmapDialog(QDialog):
         vbox.addWidget(self.__make_water_elevation_always_zero)
         vbox.addWidget(self.__include_rivers)
         vbox.addWidget(self.__min_elevation)
+        vbox.addWidget(self.__is_normalmap)
         vbox.addWidget(generate_btn)
 
         hbox.addLayout(vbox)
