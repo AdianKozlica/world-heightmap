@@ -3,6 +3,8 @@ from PyQt6.QtCore import Qt
 from widgets.upscale import UpscaleDialog
 from widgets.world_heightmap import HeightmapDialog
 
+import sys
+
 class MainWidget(QWidget):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -29,7 +31,7 @@ class MainWidget(QWidget):
         self.setWindowTitle('Heightmap toolbox')
 
 if __name__ == '__main__':
-    app = QApplication([])
+    app = QApplication(sys.argv)
     main_widget = MainWidget()
     main_widget.show()
     exit(app.exec())

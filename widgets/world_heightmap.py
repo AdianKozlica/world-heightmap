@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import (
     QPushButton,
-    QLabel,
     QCheckBox,
     QDialog,
     QLineEdit,
@@ -10,8 +9,8 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
-from PyQt6.QtGui import QDoubleValidator, QIntValidator
-from PyQt6.QtCore import QLocale
+from PyQt6.QtGui import QIntValidator
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 from pathlib import Path
 from pyproj import CRS
 from PIL import Image
@@ -19,11 +18,13 @@ from .upscale import upscale_func
 
 import os
 import subprocess
+import json
 import rasterio
 import tempfile
 import numpy as np
 
 ROOT = Path(__file__).parent.parent
+LEAFLET_HTML_PATH = str(ROOT / 'leaflet/leaflet.html')
 ETOPO1_PATH = str(ROOT / "data/etopo1.tif")
 WATER_MASK_PATH = str(ROOT / "data/gshhs_land_water_mask_3km_i.tif")
 RIVERS_PATH = str(ROOT / "data/rivers.tif")
@@ -142,23 +143,18 @@ def transform(
     os.remove(water_path)
     os.remove(river_path)
 
-
 class HeightmapDialog(QDialog):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__init_ui()
 
-    def __generate_heightmap(self):
-        west = self.__west.text()
-        south = self.__south.text()
-        east = self.__east.text()
-        north = self.__north.text()
+    def __handle_js(self, result: str):
+        loaded = json.loads(result)
 
-        if west == "" or south == "" or east == "" or north == "":
-            QMessageBox.critical(
-                self, "Error!", "All fields must be set in bounding box!"
-            )
-            return
+        west = loaded['_southWest']['lng']
+        south = loaded['_southWest']['lat']
+        east = loaded['_northEast']['lng']
+        north = loaded['_northEast']['lat']
 
         min_elevation = self.__min_elevation.text()
 
@@ -189,45 +185,24 @@ class HeightmapDialog(QDialog):
             self.__make_water_elevation_always_zero.isChecked(),
             min_elevation,
         )
+        
         QMessageBox.information(self, "Success!", "Heightmap has been generated.")
+
+    def __generate_heightmap(self):
+        self._web_view.page().runJavaScript('JSON.stringify(map.getBounds());', self.__handle_js)
 
     def __init_ui(self):
         hbox = QHBoxLayout()
-        vbox1 = QVBoxLayout()
 
-        lo = QLocale("C")
-        lo.setNumberOptions(QLocale.NumberOption.RejectGroupSeparator)
+        self._web_view = QWebEngineView()
+        
+        with open(LEAFLET_HTML_PATH, 'r') as html:
+            code = html.read()
 
-        validator = QDoubleValidator()
-        validator.setLocale(lo)
-        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        self._web_view.setHtml(code)
+        hbox.addWidget(self._web_view)
 
-        self.__west = QLineEdit()
-        self.__south = QLineEdit()
-        self.__east = QLineEdit()
-        self.__north = QLineEdit()
-
-        self.__west.setPlaceholderText("West:")
-        self.__west.setValidator(validator)
-
-        self.__south.setPlaceholderText("South:")
-        self.__south.setValidator(validator)
-
-        self.__east.setPlaceholderText("East:")
-        self.__east.setValidator(validator)
-
-        self.__north.setPlaceholderText("North:")
-        self.__north.setValidator(validator)
-
-        vbox1.addWidget(QLabel("Bounding box:"))
-        vbox1.addWidget(self.__west)
-        vbox1.addWidget(self.__south)
-        vbox1.addWidget(self.__east)
-        vbox1.addWidget(self.__north)
-
-        hbox.addLayout(vbox1)
-
-        vbox2 = QVBoxLayout()
+        vbox = QVBoxLayout()
 
         self.__make_water_elevation_always_zero = QCheckBox(
             "Make water elevation always zero"
@@ -240,12 +215,12 @@ class HeightmapDialog(QDialog):
         self.__min_elevation.setPlaceholderText("Min elevation: ")
         self.__min_elevation.setValidator(QIntValidator())
 
-        vbox2.addWidget(self.__make_water_elevation_always_zero)
-        vbox2.addWidget(self.__min_elevation)
-        vbox2.addWidget(submit_btn)
+        vbox.addWidget(self.__make_water_elevation_always_zero)
+        vbox.addWidget(self.__min_elevation)
+        vbox.addWidget(submit_btn)
 
-        hbox.addLayout(vbox2)
+        hbox.addLayout(vbox)
 
         self.setLayout(hbox)
-        self.setFixedSize(400, 150)
+        self.setFixedSize(700, 350)
         self.setWindowTitle("World heightmap")
