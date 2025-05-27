@@ -31,30 +31,15 @@ RIVERS_PATH = str(ROOT / "data/rivers.tif")
 NORMALMAP_STRENGTH = 5
 
 
-def clip(west: str, south: str, east: str, north: str):
-    src_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
-    water_mask_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
-
-    rivers_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
+def clip(west: str, south: str, east: str, north: str, path: str):
+    src = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
 
     subprocess.call(
         [
             "rio",
             "clip",
-            ETOPO1_PATH,
-            src_tmp_file.name,
-            "--overwrite",
-            "--geographic",
-            "--bounds",
-            f"{west} {south} {east} {north}",
-        ]
-    )
-    subprocess.call(
-        [
-            "rio",
-            "clip",
-            WATER_MASK_PATH,
-            water_mask_tmp_file.name,
+            path,
+            src.name,
             "--overwrite",
             "--geographic",
             "--bounds",
@@ -62,21 +47,7 @@ def clip(west: str, south: str, east: str, north: str):
         ]
     )
 
-    subprocess.call(
-        [
-            "rio",
-            "clip",
-            RIVERS_PATH,
-            rivers_tmp_file.name,
-            "--overwrite",
-            "--geographic",
-            "--bounds",
-            f"{west} {south} {east} {north}",
-        ]
-    )
-
-    return src_tmp_file.name, water_mask_tmp_file.name, rivers_tmp_file.name
-
+    return src.name
 
 def xy_to_lat_lon(x: int, y: int, src):
     src_crs = src.crs
@@ -121,25 +92,41 @@ def to_normalmap(img: Image.Image):
 
         return Image.fromarray(normal_array.astype(np.uint8))
 
+def transform_without_water_mask(src_path: str, out: str, is_normalmap=False, min_elevation=float("-inf")):
+    with rasterio.open(src_path) as src:
+        data = src.read(1)
+        max_elevation = np.nanmax(data)
 
-def transform(
+        with Image.new('RGB', (src.width, src.height)) as img:
+            pixels = img.load()
+            
+            for y in range(src.height):
+                for x in range(src.width):
+                    elev = max(int(data[y, x]), min_elevation)
+
+                    elev = int(255 * (elev / max_elevation))
+                    pixels[x, y] = (elev, elev, elev)
+            
+            if is_normalmap:
+                to_normalmap(img).save(out)
+            else:
+                img.save(out)
+    
+    os.remove(src_path)
+
+def transform_with_water_mask(
     src_path: str,
     water_path: str,
-    river_path: str,
+    river_path: str | None,
     out: str,
     make_water_elevation_always_zero=False,
     include_rivers=False,
     is_normalmap=False,
     min_elevation=float("-inf"),
 ):
-    with (
-        rasterio.open(src_path) as src,
-        rasterio.open(water_path) as water_mask,
-        rasterio.open(river_path) as river_src,
-    ):
+    with rasterio.open(src_path) as src, rasterio.open(water_path) as water_mask:
         data = src.read(1)
         water_data = water_mask.read(1)
-        river_data = river_src.read(1)
         max_elevation = np.nanmax(data)
 
         with Image.new("RGB", (water_mask.width, water_mask.height)) as img:
@@ -161,17 +148,21 @@ def transform(
             out_img = img
 
             if make_water_elevation_always_zero and include_rivers:
-                upscaled = upscale_func(img, 2).resize(
-                    (river_src.width, river_src.height)
-                )
-                upscaled_pixels = upscaled.load()
+                with rasterio.open(river_path) as river_src:
+                    river_data = river_src.read(1)
 
-                for y in range(river_src.height):
-                    for x in range(river_src.width):
-                        if river_data[y, x] != 0:
-                            upscaled_pixels[x, y] = (0, 0, 0)
+                    upscaled = upscale_func(img, 2).resize(
+                        (river_src.width, river_src.height)
+                    )
 
-                out_img = upscaled
+                    upscaled_pixels = upscaled.load()
+
+                    for y in range(river_src.height):
+                        for x in range(river_src.width):
+                            if river_data[y, x] != 0:
+                                upscaled_pixels[x, y] = (0, 0, 0)
+
+                    out_img = upscaled
 
             if is_normalmap:
                 out_img = to_normalmap(out_img)
@@ -180,7 +171,9 @@ def transform(
 
     os.remove(src_path)
     os.remove(water_path)
-    os.remove(river_path)
+    
+    if river_path is not None:
+        os.remove(river_path)
 
 
 class HeightmapDialog(QDialog):
@@ -216,8 +209,17 @@ class HeightmapDialog(QDialog):
         if not file_path.endswith(".bmp"):
             file_path += ".bmp"
 
-        src, water, river = clip(west, south, east, north)
-        transform(
+        src = clip(west, south, east, north, ETOPO1_PATH)
+
+        if not self.__make_water_elevation_always_zero.isChecked():
+            transform_without_water_mask(src, file_path, self.__is_normalmap.isChecked(), min_elevation)
+            QMessageBox.information(self, "Success!", "Heightmap has been generated.")
+            return
+
+        water = clip(west, south, east, north, WATER_MASK_PATH)
+        river = clip(west, south, east, north, RIVERS_PATH) if self.__include_rivers.isChecked() else None
+
+        transform_with_water_mask(
             src,
             water,
             river,
