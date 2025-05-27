@@ -210,8 +210,8 @@ class HeightmapDialog(QDialog):
             "Make water elevation always zero"
         )
 
-        submit_btn = QPushButton("Submit")
-        submit_btn.clicked.connect(self.__generate_heightmap)
+        generate_btn = QPushButton("Generate")
+        generate_btn.clicked.connect(self.__generate_heightmap)
 
         self.__min_elevation = QLineEdit()
         self.__min_elevation.setPlaceholderText("Min elevation: ")
@@ -219,7 +219,7 @@ class HeightmapDialog(QDialog):
 
         vbox.addWidget(self.__make_water_elevation_always_zero)
         vbox.addWidget(self.__min_elevation)
-        vbox.addWidget(submit_btn)
+        vbox.addWidget(generate_btn)
 
         hbox.addLayout(vbox)
 
