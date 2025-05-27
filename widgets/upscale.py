@@ -1,24 +1,43 @@
-from PyQt6.QtWidgets import QDialog, QFileDialog, QPushButton, QLineEdit, QVBoxLayout, QMessageBox
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QPushButton,
+    QLineEdit,
+    QVBoxLayout,
+    QMessageBox,
+)
 from PyQt6.QtGui import QIntValidator
 from PIL import Image, ImageDraw
+
 
 def upscale_func(orig: Image.Image, times: int):
     w, h = orig.size
     pixels = orig.load()
     new = Image.new(orig.mode, (w * times, h * times))
     draw = ImageDraw.Draw(new)
-    
+
     for y in range(h):
         for x in range(w):
             color = pixels[x, y]
-            draw.rectangle((x * times, y * times, x * times + (times - 1), y * times + (times - 1)), fill=color, width=0)
-        
+            draw.rectangle(
+                (
+                    x * times,
+                    y * times,
+                    x * times + (times - 1),
+                    y * times + (times - 1),
+                ),
+                fill=color,
+                width=0,
+            )
+
     return new
+
 
 def upscale(img_path: str, out_path: str, times: int):
     with Image.open(img_path) as orig:
-        with upscale_func(orig, times) as new:    
+        with upscale_func(orig, times) as new:
             new.save(out_path)
+
 
 class UpscaleDialog(QDialog):
     def __init__(self, *args, **kwargs):
@@ -26,26 +45,20 @@ class UpscaleDialog(QDialog):
 
         self.__filename = None
         self.__init_ui()
-    
+
     def __select_file(self):
         options = QFileDialog.Option.ReadOnly
         file_filter = "BMP Images (*.bmp)"
-        
+
         self.__filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select BMP Image File",
-            "",
-            file_filter,
-            options=options
+            self, "Select BMP Image File", "", file_filter, options=options
         )
 
     def __upscale_file(self):
         if self.__filename is None:
-            QMessageBox.critical(
-                self, "Error!", "You must select a filename!"
-            )
+            QMessageBox.critical(self, "Error!", "You must select a filename!")
             return
-        
+
         file_path, _ = QFileDialog.getSaveFileName(
             None,
             "Save BMP File",
@@ -55,9 +68,9 @@ class UpscaleDialog(QDialog):
 
         if file_path is None:
             return
-        
-        if not file_path.endswith('.bmp'):
-            file_path += '.bmp'
+
+        if not file_path.endswith(".bmp"):
+            file_path += ".bmp"
 
         upscale(self.__filename, file_path, int(self.__upscale_factor.text()))
         QMessageBox.information(self, "Success!", "Image has been upscaled!")
@@ -65,20 +78,20 @@ class UpscaleDialog(QDialog):
     def __init_ui(self):
         vbox = QVBoxLayout()
 
-        select_file = QPushButton('Select File')
+        select_file = QPushButton("Select File")
         select_file.clicked.connect(self.__select_file)
 
-        run_upscale = QPushButton('Run')
+        run_upscale = QPushButton("Run")
         run_upscale.clicked.connect(self.__upscale_file)
 
         self.__upscale_factor = QLineEdit()
         self.__upscale_factor.setValidator(QIntValidator())
-        self.__upscale_factor.setPlaceholderText('Upscale factor: e.g. 2')
+        self.__upscale_factor.setPlaceholderText("Upscale factor: e.g. 2")
 
         vbox.addWidget(self.__upscale_factor)
         vbox.addWidget(select_file)
         vbox.addWidget(run_upscale)
 
-        self.setWindowTitle('Upscale')
+        self.setWindowTitle("Upscale")
         self.setFixedSize(200, 100)
         self.setLayout(vbox)

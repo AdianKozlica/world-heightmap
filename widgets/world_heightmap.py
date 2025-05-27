@@ -24,22 +24,17 @@ import tempfile
 import numpy as np
 
 ROOT = Path(__file__).parent.parent
-LEAFLET_HTML_PATH = str(ROOT / 'leaflet/leaflet.html')
+LEAFLET_HTML_PATH = str(ROOT / "leaflet/leaflet.html")
 ETOPO1_PATH = str(ROOT / "data/etopo1.tif")
 WATER_MASK_PATH = str(ROOT / "data/gshhs_land_water_mask_3km_i.tif")
 RIVERS_PATH = str(ROOT / "data/rivers.tif")
 
-def clip(west: str, south: str, east: str, north: str):
-    src_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False
-    )
-    water_mask_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False
-    )
 
-    rivers_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False
-    )
+def clip(west: str, south: str, east: str, north: str):
+    src_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
+    water_mask_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
+
+    rivers_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
 
     subprocess.call(
         [
@@ -107,7 +102,11 @@ def transform(
     make_water_elevation_always_zero=False,
     min_elevation=float("-inf"),
 ):
-    with rasterio.open(src_path) as src, rasterio.open(water_path) as water_mask, rasterio.open(river_path) as river_src:
+    with (
+        rasterio.open(src_path) as src,
+        rasterio.open(water_path) as water_mask,
+        rasterio.open(river_path) as river_src,
+    ):
         data = src.read(1)
         water_data = water_mask.read(1)
         river_data = river_src.read(1)
@@ -131,17 +130,18 @@ def transform(
 
             upscaled = upscale_func(img, 2).resize((river_src.width, river_src.height))
             upscaled_pixels = upscaled.load()
-            
+
             for y in range(river_src.height):
                 for x in range(river_src.width):
                     if river_data[y, x] != 0:
                         upscaled_pixels[x, y] = (0, 0, 0)
-            
+
             upscaled.save(out)
 
     os.remove(src_path)
     os.remove(water_path)
     os.remove(river_path)
+
 
 class HeightmapDialog(QDialog):
     def __init__(self, *args, **kwargs):
@@ -151,10 +151,10 @@ class HeightmapDialog(QDialog):
     def __handle_js(self, result: str):
         loaded = json.loads(result)
 
-        west = loaded['_southWest']['lng']
-        south = loaded['_southWest']['lat']
-        east = loaded['_northEast']['lng']
-        north = loaded['_northEast']['lat']
+        west = loaded["_southWest"]["lng"]
+        south = loaded["_southWest"]["lat"]
+        east = loaded["_northEast"]["lng"]
+        north = loaded["_northEast"]["lat"]
 
         min_elevation = self.__min_elevation.text()
 
@@ -172,9 +172,9 @@ class HeightmapDialog(QDialog):
 
         if file_path is None:
             return
-        
-        if not file_path.endswith('.bmp'):
-            file_path += '.bmp'
+
+        if not file_path.endswith(".bmp"):
+            file_path += ".bmp"
 
         src, water, river = clip(west, south, east, north)
         transform(
@@ -185,18 +185,20 @@ class HeightmapDialog(QDialog):
             self.__make_water_elevation_always_zero.isChecked(),
             min_elevation,
         )
-        
+
         QMessageBox.information(self, "Success!", "Heightmap has been generated.")
 
     def __generate_heightmap(self):
-        self._web_view.page().runJavaScript('JSON.stringify(map.getBounds());', self.__handle_js)
+        self._web_view.page().runJavaScript(
+            "JSON.stringify(map.getBounds());", self.__handle_js
+        )
 
     def __init_ui(self):
         hbox = QHBoxLayout()
 
         self._web_view = QWebEngineView()
-        
-        with open(LEAFLET_HTML_PATH, 'r') as html:
+
+        with open(LEAFLET_HTML_PATH, "r") as html:
             code = html.read()
 
         self._web_view.setHtml(code)
