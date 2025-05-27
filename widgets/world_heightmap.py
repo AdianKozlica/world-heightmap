@@ -30,6 +30,7 @@ WATER_MASK_PATH = str(ROOT / "data/gshhs_land_water_mask_3km_i.tif")
 RIVERS_PATH = str(ROOT / "data/rivers.tif")
 NORMALMAP_STRENGTH = 5
 
+
 def clip(west: str, south: str, east: str, north: str):
     src_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
     water_mask_tmp_file = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
@@ -93,8 +94,9 @@ def xy_to_lat_lon(x: int, y: int, src):
 
     return lat, lon
 
+
 def to_normalmap(img: Image.Image):
-    with img.convert('L') as heightmap:
+    with img.convert("L") as heightmap:
         height_array = np.array(heightmap).astype(np.float32) / 255.0
 
         width, height = heightmap.size
@@ -118,6 +120,7 @@ def to_normalmap(img: Image.Image):
                 normal_array[y, x] = (normal * 0.5 + 0.5) * 255
 
         return Image.fromarray(normal_array.astype(np.uint8))
+
 
 def transform(
     src_path: str,
@@ -156,9 +159,11 @@ def transform(
                     pixels[x, y] = (elev, elev, elev)
 
             out_img = img
-            
+
             if make_water_elevation_always_zero and include_rivers:
-                upscaled = upscale_func(img, 2).resize((river_src.width, river_src.height))
+                upscaled = upscale_func(img, 2).resize(
+                    (river_src.width, river_src.height)
+                )
                 upscaled_pixels = upscaled.load()
 
                 for y in range(river_src.height):
@@ -170,7 +175,7 @@ def transform(
 
             if is_normalmap:
                 out_img = to_normalmap(out_img)
-            
+
             out_img.save(out)
 
     os.remove(src_path)
