@@ -100,6 +100,7 @@ def transform(
     river_path: str,
     out: str,
     make_water_elevation_always_zero=False,
+    include_rivers=False,
     min_elevation=float("-inf"),
 ):
     with (
@@ -128,15 +129,18 @@ def transform(
                     elev = int(255 * (elev / max_elevation))
                     pixels[x, y] = (elev, elev, elev)
 
-            upscaled = upscale_func(img, 2).resize((river_src.width, river_src.height))
-            upscaled_pixels = upscaled.load()
+            if make_water_elevation_always_zero and include_rivers:
+                upscaled = upscale_func(img, 2).resize((river_src.width, river_src.height))
+                upscaled_pixels = upscaled.load()
 
-            for y in range(river_src.height):
-                for x in range(river_src.width):
-                    if river_data[y, x] != 0:
-                        upscaled_pixels[x, y] = (0, 0, 0)
+                for y in range(river_src.height):
+                    for x in range(river_src.width):
+                        if river_data[y, x] != 0:
+                            upscaled_pixels[x, y] = (0, 0, 0)
 
-            upscaled.save(out)
+                upscaled.save(out)
+            else:
+                img.save(out)
 
     os.remove(src_path)
     os.remove(water_path)
@@ -183,6 +187,7 @@ class HeightmapDialog(QDialog):
             river,
             file_path,
             self.__make_water_elevation_always_zero.isChecked(),
+            self.__include_rivers.isChecked(),
             min_elevation,
         )
 
@@ -195,6 +200,7 @@ class HeightmapDialog(QDialog):
 
     def __init_ui(self):
         hbox = QHBoxLayout()
+        hbox.setSpacing(15)
 
         self._web_view = QWebEngineView()
 
@@ -210,6 +216,8 @@ class HeightmapDialog(QDialog):
             "Make water elevation always zero"
         )
 
+        self.__include_rivers = QCheckBox("Include rivers")
+
         generate_btn = QPushButton("Generate")
         generate_btn.clicked.connect(self.__generate_heightmap)
 
@@ -218,6 +226,7 @@ class HeightmapDialog(QDialog):
         self.__min_elevation.setValidator(QIntValidator())
 
         vbox.addWidget(self.__make_water_elevation_always_zero)
+        vbox.addWidget(self.__include_rivers)
         vbox.addWidget(self.__min_elevation)
         vbox.addWidget(generate_btn)
 
