@@ -1,6 +1,5 @@
 from PyQt6.QtWidgets import (
     QPushButton,
-    QLabel,
     QCheckBox,
     QDialog,
     QLineEdit,
@@ -10,8 +9,8 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QMessageBox,
 )
-from PyQt6.QtGui import QDoubleValidator, QIntValidator
-from PyQt6.QtCore import QLocale
+from PyQt6.QtGui import QIntValidator
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 from pathlib import Path
 from pyproj import CRS
 from PIL import Image
@@ -19,45 +18,28 @@ from .upscale import upscale_func
 
 import os
 import subprocess
+import json
 import rasterio
 import tempfile
 import numpy as np
 
 ROOT = Path(__file__).parent.parent
+LEAFLET_HTML_PATH = str(ROOT / "leaflet/leaflet.html")
 ETOPO1_PATH = str(ROOT / "data/etopo1.tif")
 WATER_MASK_PATH = str(ROOT / "data/gshhs_land_water_mask_3km_i.tif")
 RIVERS_PATH = str(ROOT / "data/rivers.tif")
+NORMALMAP_STRENGTH = 5
 
-def clip(west: str, south: str, east: str, north: str):
-    src_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False
-    )
-    water_mask_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False
-    )
 
-    rivers_tmp_file = tempfile.NamedTemporaryFile(
-        suffix=".tif", delete=False
-    )
+def clip(west: str, south: str, east: str, north: str, path: str):
+    src = tempfile.NamedTemporaryFile(suffix=".tif", delete=False)
 
     subprocess.call(
         [
             "rio",
             "clip",
-            ETOPO1_PATH,
-            src_tmp_file.name,
-            "--overwrite",
-            "--geographic",
-            "--bounds",
-            f"{west} {south} {east} {north}",
-        ]
-    )
-    subprocess.call(
-        [
-            "rio",
-            "clip",
-            WATER_MASK_PATH,
-            water_mask_tmp_file.name,
+            path,
+            src.name,
             "--overwrite",
             "--geographic",
             "--bounds",
@@ -65,20 +47,7 @@ def clip(west: str, south: str, east: str, north: str):
         ]
     )
 
-    subprocess.call(
-        [
-            "rio",
-            "clip",
-            RIVERS_PATH,
-            rivers_tmp_file.name,
-            "--overwrite",
-            "--geographic",
-            "--bounds",
-            f"{west} {south} {east} {north}",
-        ]
-    )
-
-    return src_tmp_file.name, water_mask_tmp_file.name, rivers_tmp_file.name
+    return src.name
 
 
 def xy_to_lat_lon(x: int, y: int, src):
@@ -98,18 +67,71 @@ def xy_to_lat_lon(x: int, y: int, src):
     return lat, lon
 
 
-def transform(
+def to_normalmap(img: Image.Image):
+    with img.convert("L") as heightmap:
+        height_array = np.array(heightmap).astype(np.float32) / 255.0
+
+        width, height = heightmap.size
+        normal_array = np.zeros((height, width, 3), dtype=np.float32)
+
+        for y in range(1, height - 1):
+            for x in range(1, width - 1):
+                left = height_array[y, x - 1]
+                right = height_array[y, x + 1]
+                down = height_array[y + 1, x]
+                up = height_array[y - 1, x]
+
+                normal_x = (left - right) * NORMALMAP_STRENGTH
+                normal_y = (down - up) * NORMALMAP_STRENGTH
+
+                normal_z = 1.0
+
+                normal = np.array([normal_x, normal_y, normal_z])
+                normal = normal / np.linalg.norm(normal)  # Normalize
+
+                normal_array[y, x] = (normal * 0.5 + 0.5) * 255
+
+        return Image.fromarray(normal_array.astype(np.uint8))
+
+
+def transform_without_water_mask(
+    src_path: str, out: str, is_normalmap=False, min_elevation=float("-inf")
+):
+    with rasterio.open(src_path) as src:
+        data = src.read(1)
+        max_elevation = np.nanmax(data)
+
+        with Image.new("RGB", (src.width, src.height)) as img:
+            pixels = img.load()
+
+            for y in range(src.height):
+                for x in range(src.width):
+                    elev = max(int(data[y, x]), min_elevation)
+
+                    elev = int(255 * (elev / max_elevation))
+                    pixels[x, y] = (elev, elev, elev)
+
+            if is_normalmap:
+                to_normalmap(img).save(out)
+            else:
+                img.save(out)
+
+    os.remove(src_path)
+
+
+def transform_with_water_mask(
     src_path: str,
     water_path: str,
-    river_path: str,
+    river_path: str | None,
     out: str,
     make_water_elevation_always_zero=False,
+    include_rivers=False,
+    is_normalmap=False,
     min_elevation=float("-inf"),
 ):
-    with rasterio.open(src_path) as src, rasterio.open(water_path) as water_mask, rasterio.open(river_path) as river_src:
+    with rasterio.open(src_path) as src, rasterio.open(water_path) as water_mask:
         data = src.read(1)
         water_data = water_mask.read(1)
-        river_data = river_src.read(1)
         max_elevation = np.nanmax(data)
 
         with Image.new("RGB", (water_mask.width, water_mask.height)) as img:
@@ -128,19 +150,35 @@ def transform(
                     elev = int(255 * (elev / max_elevation))
                     pixels[x, y] = (elev, elev, elev)
 
-            upscaled = upscale_func(img, 2).resize((river_src.width, river_src.height))
-            upscaled_pixels = upscaled.load()
-            
-            for y in range(river_src.height):
-                for x in range(river_src.width):
-                    if river_data[y, x] != 0:
-                        upscaled_pixels[x, y] = (0, 0, 0)
-            
-            upscaled.save(out)
+            out_img = img
+
+            if make_water_elevation_always_zero and include_rivers:
+                with rasterio.open(river_path) as river_src:
+                    river_data = river_src.read(1)
+
+                    upscaled = upscale_func(img, 2).resize(
+                        (river_src.width, river_src.height)
+                    )
+
+                    upscaled_pixels = upscaled.load()
+
+                    for y in range(river_src.height):
+                        for x in range(river_src.width):
+                            if river_data[y, x] != 0:
+                                upscaled_pixels[x, y] = (0, 0, 0)
+
+                    out_img = upscaled
+
+            if is_normalmap:
+                out_img = to_normalmap(out_img)
+
+            out_img.save(out)
 
     os.remove(src_path)
     os.remove(water_path)
-    os.remove(river_path)
+
+    if river_path is not None:
+        os.remove(river_path)
 
 
 class HeightmapDialog(QDialog):
@@ -148,17 +186,13 @@ class HeightmapDialog(QDialog):
         super().__init__(*args, **kwargs)
         self.__init_ui()
 
-    def __generate_heightmap(self):
-        west = self.__west.text()
-        south = self.__south.text()
-        east = self.__east.text()
-        north = self.__north.text()
+    def __handle_js(self, result: str):
+        loaded = json.loads(result)
 
-        if west == "" or south == "" or east == "" or north == "":
-            QMessageBox.critical(
-                self, "Error!", "All fields must be set in bounding box!"
-            )
-            return
+        west = loaded["_southWest"]["lng"]
+        south = loaded["_southWest"]["lat"]
+        east = loaded["_northEast"]["lng"]
+        north = loaded["_northEast"]["lat"]
 
         min_elevation = self.__min_elevation.text()
 
@@ -176,76 +210,80 @@ class HeightmapDialog(QDialog):
 
         if file_path is None:
             return
-        
-        if not file_path.endswith('.bmp'):
-            file_path += '.bmp'
 
-        src, water, river = clip(west, south, east, north)
-        transform(
+        if not file_path.endswith(".bmp"):
+            file_path += ".bmp"
+
+        src = clip(west, south, east, north, ETOPO1_PATH)
+
+        if not self.__make_water_elevation_always_zero.isChecked():
+            transform_without_water_mask(
+                src, file_path, self.__is_normalmap.isChecked(), min_elevation
+            )
+            QMessageBox.information(self, "Success!", "Heightmap has been generated.")
+            return
+
+        water = clip(west, south, east, north, WATER_MASK_PATH)
+        river = (
+            clip(west, south, east, north, RIVERS_PATH)
+            if self.__include_rivers.isChecked()
+            else None
+        )
+
+        transform_with_water_mask(
             src,
             water,
             river,
             file_path,
             self.__make_water_elevation_always_zero.isChecked(),
+            self.__include_rivers.isChecked(),
+            self.__is_normalmap.isChecked(),
             min_elevation,
         )
+
         QMessageBox.information(self, "Success!", "Heightmap has been generated.")
+
+    def __generate_heightmap(self):
+        self._web_view.page().runJavaScript(
+            "JSON.stringify(map.getBounds());", self.__handle_js
+        )
 
     def __init_ui(self):
         hbox = QHBoxLayout()
-        vbox1 = QVBoxLayout()
+        hbox.setSpacing(15)
 
-        lo = QLocale("C")
-        lo.setNumberOptions(QLocale.NumberOption.RejectGroupSeparator)
+        self._web_view = QWebEngineView()
 
-        validator = QDoubleValidator()
-        validator.setLocale(lo)
-        validator.setNotation(QDoubleValidator.Notation.StandardNotation)
+        with open(LEAFLET_HTML_PATH, "r") as html:
+            code = html.read()
 
-        self.__west = QLineEdit()
-        self.__south = QLineEdit()
-        self.__east = QLineEdit()
-        self.__north = QLineEdit()
+        self._web_view.setHtml(code)
+        hbox.addWidget(self._web_view)
 
-        self.__west.setPlaceholderText("West:")
-        self.__west.setValidator(validator)
-
-        self.__south.setPlaceholderText("South:")
-        self.__south.setValidator(validator)
-
-        self.__east.setPlaceholderText("East:")
-        self.__east.setValidator(validator)
-
-        self.__north.setPlaceholderText("North:")
-        self.__north.setValidator(validator)
-
-        vbox1.addWidget(QLabel("Bounding box:"))
-        vbox1.addWidget(self.__west)
-        vbox1.addWidget(self.__south)
-        vbox1.addWidget(self.__east)
-        vbox1.addWidget(self.__north)
-
-        hbox.addLayout(vbox1)
-
-        vbox2 = QVBoxLayout()
+        vbox = QVBoxLayout()
 
         self.__make_water_elevation_always_zero = QCheckBox(
             "Make water elevation always zero"
         )
 
-        submit_btn = QPushButton("Submit")
-        submit_btn.clicked.connect(self.__generate_heightmap)
+        self.__include_rivers = QCheckBox("Include rivers")
+        self.__is_normalmap = QCheckBox("Is normal mapped")
+
+        generate_btn = QPushButton("Generate")
+        generate_btn.clicked.connect(self.__generate_heightmap)
 
         self.__min_elevation = QLineEdit()
         self.__min_elevation.setPlaceholderText("Min elevation: ")
         self.__min_elevation.setValidator(QIntValidator())
 
-        vbox2.addWidget(self.__make_water_elevation_always_zero)
-        vbox2.addWidget(self.__min_elevation)
-        vbox2.addWidget(submit_btn)
+        vbox.addWidget(self.__make_water_elevation_always_zero)
+        vbox.addWidget(self.__include_rivers)
+        vbox.addWidget(self.__min_elevation)
+        vbox.addWidget(self.__is_normalmap)
+        vbox.addWidget(generate_btn)
 
-        hbox.addLayout(vbox2)
+        hbox.addLayout(vbox)
 
         self.setLayout(hbox)
-        self.setFixedSize(400, 150)
+        self.setFixedSize(700, 350)
         self.setWindowTitle("World heightmap")
