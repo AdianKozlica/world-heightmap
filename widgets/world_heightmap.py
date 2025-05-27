@@ -1,9 +1,8 @@
 from PyQt6.QtWidgets import (
-    QApplication,
     QPushButton,
     QLabel,
     QCheckBox,
-    QWidget,
+    QDialog,
     QLineEdit,
     QCheckBox,
     QVBoxLayout,
@@ -16,7 +15,7 @@ from PyQt6.QtCore import QLocale
 from pathlib import Path
 from pyproj import CRS
 from PIL import Image
-from upscale import upscale_func
+from .upscale import upscale_func
 
 import os
 import subprocess
@@ -24,7 +23,7 @@ import rasterio
 import tempfile
 import numpy as np
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).parent.parent
 ETOPO1_PATH = str(ROOT / "data/etopo1.tif")
 WATER_MASK_PATH = str(ROOT / "data/gshhs_land_water_mask_3km_i.tif")
 RIVERS_PATH = str(ROOT / "data/rivers.tif")
@@ -144,7 +143,7 @@ def transform(
     os.remove(river_path)
 
 
-class MainWidget(QWidget):
+class HeightmapDialog(QDialog):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.__init_ui()
@@ -250,10 +249,3 @@ class MainWidget(QWidget):
         self.setLayout(hbox)
         self.setFixedSize(400, 150)
         self.setWindowTitle("World heightmap")
-
-
-if __name__ == "__main__":
-    app = QApplication([])
-    main_widget = MainWidget()
-    main_widget.show()
-    exit(app.exec())

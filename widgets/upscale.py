@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QApplication, QWidget, QFileDialog, QPushButton, QLineEdit, QVBoxLayout, QMessageBox
+from PyQt6.QtWidgets import QDialog, QFileDialog, QPushButton, QLineEdit, QVBoxLayout, QMessageBox
 from PyQt6.QtGui import QIntValidator
 from PIL import Image, ImageDraw
 
@@ -20,7 +20,7 @@ def upscale(img_path: str, out_path: str, times: int):
         with upscale_func(orig, times) as new:    
             new.save(out_path)
 
-class MainWidget(QWidget):
+class UpscaleDialog(QDialog):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -75,17 +75,10 @@ class MainWidget(QWidget):
         self.__upscale_factor.setValidator(QIntValidator())
         self.__upscale_factor.setPlaceholderText('Upscale factor: e.g. 2')
 
-        vbox.addWidget(select_file)
         vbox.addWidget(self.__upscale_factor)
+        vbox.addWidget(select_file)
         vbox.addWidget(run_upscale)
 
         self.setWindowTitle('Upscale')
         self.setFixedSize(200, 100)
         self.setLayout(vbox)
-
-if __name__ == '__main__':
-    app = QApplication([])
-    main_widget = MainWidget()
-    main_widget.show()
-    exit(app.exec())
-
