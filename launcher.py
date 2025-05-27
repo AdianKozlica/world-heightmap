@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QPushButton, QVBoxLayout
 from PyQt6.QtCore import Qt
 from widgets.upscale import UpscaleDialog
