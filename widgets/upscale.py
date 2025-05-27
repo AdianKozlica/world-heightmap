@@ -75,8 +75,8 @@ class UpscaleDialog(QDialog):
         self.__upscale_factor.setValidator(QIntValidator())
         self.__upscale_factor.setPlaceholderText('Upscale factor: e.g. 2')
 
-        vbox.addWidget(select_file)
         vbox.addWidget(self.__upscale_factor)
+        vbox.addWidget(select_file)
         vbox.addWidget(run_upscale)
 
         self.setWindowTitle('Upscale')
